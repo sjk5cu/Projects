@@ -1,0 +1,133 @@
+---
+title: "Project 2-LRS"
+author: "Lindley R. Slipetz"
+date: "2023-07-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+housing <- read.csv("kc_house_data.csv", header = TRUE)
+```
+
+We create a variable of above average vs below average construction.
+
+```{r, warning = FALSE}
+housing<-housing %>%
+  mutate(highQuality=cut(grade, breaks = c(-Inf, 6.9999, Inf),
+                    	labels = c("0","1")))
+```
+
+First we remove the variables we will not be using.
+
+```{r}
+sub <- c('price', 'bedrooms', 'bathrooms', 'sqft_living', 'sqft_lot', 'floors', 'waterfront', 'view', 'condition', 'sqft_above', 'sqft_basement', 'yr_built', 'yr_renovated', 'sqft_living15', 'sqft_lot15', 'highQuality')
+housing <- housing[,sub]
+```
+
+
+Next, we split the data into training and testing.
+```{r}
+set.seed(6021) ##for reproducibility to get the same split
+sample<-sample.int(nrow(housing), floor(.50*nrow(housing)), replace = F)
+train<-housing[sample, ] ##training data frame
+test<-housing[-sample, ] 
+```
+
+
+
+Next,  we set up the full model and null model for backwards selection
+
+```{r, warning = FALSE}
+regnull <- glm(factor(highQuality)~1, data=train, family="binomial")
+regfull <- glm(factor(highQuality)~., data=train, family="binomial")
+```
+
+Then, we carry out the backwards selection.
+
+```{r, warning = FALSE}
+step(regfull, scope=list(lower=regnull, upper=regfull), direction="backward")
+```
+
+
+The model we get is highQuality predicted by price + bathrooms + sqft_living + sqft_lot + 
+    waterfront + sqft_above + yr_built + yr_renovated + sqft_living15 + sqft_lot15
+
+
+    
+
+Next, we perform forwards selection.
+
+```{r, warning = FALSE}
+step(regnull, scope=list(lower=regnull, upper=regfull), direction="forward")
+```
+
+We find the same model.
+
+```{r, warning = FALSE}
+reg <- glm(formula = factor(highQuality) ~ sqft_living + yr_built + 
+    price + sqft_lot15 + sqft_living15 + sqft_above + bathrooms + 
+    waterfront + sqft_lot + yr_renovated, family = "binomial", 
+    data = train)
+summary(reg)
+```
+The equation we find is logit($\pi$) = -.01 + .0011sqft_living + .05yr_built + 8.06e-06price - 1.04e-05sqft_lot15 + 6.74e-04sqft_living15 + 9.26e-04sqft_above + .36bathrooms - 1.74waterfront - 3.95e-06sqft_lot  + 1.59e-04yr_renovated. 
+
+
+When assessing the relationship between high quality construction and other variables, we found that there was a positive relationship between living space (square foot), year built, price, neighbor's lot space (square feet),  upper floors (square feet), number of bathrooms, and year renovated. This means that there is a positive relationship between size of house and the quality of construction and design in which increasing size, increases the quality. A similar trend is found between newness of the house (including renovations) and quality of construction and design. We also see a negative relationship with waterfront, meaning that when you shift from a waterfront house to a house not on the waterfront, there is a dip in quality. Surprisingly, there is a negative relationship between the size of the 15 neighbors' houses and lots and quality of construction and design, meaning that if your neighbors have big houses with lots of land, your house may be lower quality. Hence, the tipped we learned for buying a quality house is build a big house near the water, where the surrounding houses are less big.
+
+Next we test the ROC curve and the AUC to assess the ability of our model to handle the test data.
+
+```{r}
+preds<-predict(reg,newdata=test, type="response")
+library(ROCR)
+##produce the numbers associated with classification table
+rates<-ROCR::prediction(preds, test$highQuality)
+##store the true positive and false positive rates
+roc_result<-ROCR::performance(rates,measure="tpr", x.measure="fpr")
+##plot ROC curve and overlay the diagonal line for random guessing
+plot(roc_result, main="ROC Curve for Our Model")
+lines(x = c(0,1), y = c(0,1), col="red")
+
+```
+
+The ROC curve seems to indicate that our model is much better than a model that chooses randomly. Next we look at the AUC.
+
+```{r}
+auc<-performance(rates, measure = "auc")
+auc@y.values
+```
+
+Our AUC is very high, indicating it is better then a model that chooses randomly. Finally, we will check the confusion matrix to get our error rate and other statistics.
+
+```{r}
+table(test$highQuality, preds>0.5)
+```
+
+```{r}
+dat <- data.frame('Error_rate' = NA, 'FPR' = NA, 'FNR' = NA, 'Precision' = NA)
+dat$Error_rate[1] <- (559+204)/nrow(test)
+dat$FPR[1] <- 559/(616+559)
+dat$FNR[1] <- 204/(204+9428)
+dat$Precision[1] <- 9428/(559 + 9428)
+dat
+```
+
+Our False Positive Rate is a bit high and we have some wiggle room on the False Negative Rate. So, we will increase the threshold to .7.
+
+
+
+```{r}
+table(test$highQuality, preds>0.7)
+```
+
+```{r}
+dat <- data.frame('Error_rate' = NA, 'FPR' = NA, 'FNR' = NA, 'Precision' = NA)
+dat$Error_rate[1] <- (312+551)/nrow(test)
+dat$FPR[1] <- 312/(863+312)
+dat$FNR[1] <- 551/(551+9081)
+dat$Precision[1] <- 9081/(312 + 9081)
+dat
+```
+
+Adjusting the threshold has helped the FPR, as expected. The error rate tells use that we have few houses being incorrectly classified as either above average or below average. There are some below average houses being incorrectly classified as above average, and few above average houses being classified as below average. Finally, a strength of our model is that most of above average houses are being classified as above average houses.
