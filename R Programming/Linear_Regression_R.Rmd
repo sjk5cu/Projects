@@ -1,0 +1,237 @@
+---
+title: "Simple Linear Regression Analysis of Diamonds"
+output: pdf_document
+date: "2023-06-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Read in libraries
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(MASS)
+```
+
+Read in data
+
+```{r}
+diamonds<-read.csv("diamonds4.csv")
+```
+
+
+
+
+
+
+
+
+# Simple Linear Regression Analysis
+
+
+  Before we begin the analysis, we want to state the framework we will use to analyse the regression. In order for the simple linear regression to be viable, four assumptions must be met:
+
+1) The errors have a mean of zero. If this assumption is not met, it means our model will over-, or under-predict. 
+2) Errors have a constant variance. The vertical variation in the data should be same all along the graph. If this assumption is not met, statistical inference is no longer reliable, and any hypothesis testing should not be trusted.
+3) Errors are independent from each other.
+4) Errors are normally distributed.
+
+
+  To assess assumptions 1 and 2, we have two tools: the original scatterplot of the data, and the residual plot. To address assumption 3, we use an ACF plot (auto-correlation function). Finally, to address assumption 4, we use a QQplot.
+
+
+## Price vs Carat Original Scatterplot
+
+```{r}
+ggplot(diamonds, aes(x=carat,y=price))+
+geom_point()+
+geom_smooth(method = "lm", se=FALSE)+
+labs(x = "Carat", y = "Price", title = "Scatterplot of Carat vs Price")
+```
+
+
+## Fit a linear model and display residual plots
+
+```{r}
+SLRAttemptOriginal<-lm(price~carat, data=diamonds)
+par(mfrow = c(2, 2))
+plot(SLRAttemptOriginal)
+```
+
+## ACF Plot of Residuals
+
+```{r}
+acf(SLRAttemptOriginal$residuals, main="ACF Plot of Residuals Original Data")
+```
+
+  
+  
+  
+  Graphing the original data, we see a plot that does not infer a linear relationship. Looking at the residual plots, we see that assumption 1 isn’t met; the residuals are not centered around zero. We also see the spread of the residuals increases as we move from left to right, so assumption 2 is also not met. Below that, we plotted the ACF to confirm that the measurements of each diamond are independent of each other. That is, no observation clearly exceeds the dotted blue line besides the first observation which is always 1. So, we conclude that assumption 3 is met. The QQplot shows that the errors aren't normally distributed. The values, ideally, should all lie on a 45 degree line.
+
+  Our first goal is to make the spread of the residuals more consistent. Given that assumptions 1 and 2 are not met, we first transform the response variable to address assumption 2 first. To that end, we use the Box-Cox plot to help guide us with the transformation. We see a range of values that we can use to transform using the equation $y^* = y^\lambda$. The Box-Cox plot helps us choose a value for $\lambda$. 
+  
+  From the original residual plot, we see that the spread of the residuals increases as the predictor increases. This would suggest that the $\lambda$ < 1. The Box-Cox plot confirms this.  
+
+## Boxcox Plot of the Original
+
+```{r}
+boxcox(SLRAttemptOriginal, lambda = seq(0,.4,.1))
+```
+
+
+
+
+We choose $\lambda$ = .3 as our first transformation
+
+
+## Y-Star Transformation
+
+```{r}
+ystarPoint3<-(diamonds$price)**.3
+star_df<-data.frame(diamonds,ystarPoint3)
+```
+
+```{r}
+ggplot(star_df, aes(x=carat,y=ystarPoint3))+
+geom_point()+
+geom_smooth(method = "lm", se=FALSE)+
+labs(x = "Carat", y = "Price", title = "Scatterplot of Carat vs Price")
+```
+
+
+```{r}
+SLRAttemptPointThree<-lm(ystarPoint3~carat, data=star_df)
+par(mfrow = c(2, 2))
+plot(SLRAttemptPointThree)
+```
+
+## Boxcox Plot of Lambda = .3
+
+```{r}
+boxcox(SLRAttemptPointThree)
+```
+
+  
+  
+  
+  We see $\lambda$ = .3 does help improve variance for assumption 2, but the effect is not strong enough. So we choose a $\lambda$ closer to zero, like .1, to produce a stronger effect.
+
+
+## Lambda as .1
+```{r}
+ystarPointOne<-(diamonds$price)**.1
+star_df<-data.frame(star_df,ystarPointOne)
+```
+
+```{r}
+ggplot(star_df, aes(x=carat,y=ystarPointOne))+
+geom_point()+
+geom_smooth(method = "lm", se=FALSE)+
+labs(x = "Carat", y = "Price", title = "Scatterplot of Carat vs Price")
+```
+
+
+
+```{r}
+SLRAttemptPointOne<-lm(ystarPointOne~carat, data=star_df)
+par(mfrow = c(2, 2))
+plot(SLRAttemptPointOne)
+```
+
+ 
+ 
+ 
+  We then move to $\lambda$ = .1, which is on the right track. The spread of the residuals becomes more consistent. However, the scatter plot shows that there is still some curvature to the data, and the residual plot shows this as well. Assumption 2 has been met, but not assumption 1. It is now time to transform the predictor variable, carat size.
+
+
+  The shape of the scatterplot with just $\lambda$ = .1 helped guide our selection of how we would transform the x variable. The shape of the curve looks logarithmic. To keep consistent, we chose to transform the x variable in the same way as we had the y variable. That is, $x^*= x^.1$
+
+
+## Transformations on x*
+
+```{r}
+xstarPointOne<-(diamonds$carat)**.1
+star_df<-data.frame(star_df,xstarPointOne)
+```
+
+## Plot X* and Y* -- Lambda = .1
+
+```{r}
+ggplot2::ggplot(star_df, aes(x=xstarPointOne,y=ystarPointOne))+
+geom_point()+
+geom_smooth(method = "lm", se=FALSE)+
+labs(x = "Tenth Root of Carat ", y = "Tenth Root of Price", title = "Scatterplot of Carat vs Price in Diamonds")
+```
+
+## Plot new residuals with both starred axes
+
+```{r}
+SLRBothPointOne<-lm(ystarPointOne~xstarPointOne, data=star_df)
+par(mfrow = c(2, 2))
+plot(SLRBothPointOne)
+```
+
+  
+  
+  
+  Now we see a linear relationship. Looking at the diagnostic plots, we see the variance has stabilized and is much more consistent than before. The means are centered around zero with a slight curve. Assumptions 1 and 2 are met. Assumption 4 is met from looking at the QQplot. And we know from the ACF plot that assumption 3 is met. Let us look at the regression coefficients.
+  
+  
+
+```{r}
+summary(SLRBothPointOne)
+```
+
+ 
+ 
+ 
+  Looking at the output of the transformed model, $R^2=.951$. Based on the $B_1$ t-value of 153.40 and the associated p-value, the data support the hypothesis that there is a linear relationship between these two transformed variables.
+
+  However, setting $\lambda$ = .1 means that we lose the interpretability of the coefficients. We chose to adjust the model to use a $\lambda$ = 0. 
+
+## Choosing lambda as 0, taking the logarithm
+
+```{r}
+ystarLog<-log(diamonds$price)
+star_df<-data.frame(star_df,ystarLog)
+
+xstarLog<-log(diamonds$carat)
+star_df<-data.frame(star_df,xstarLog)
+```
+
+
+```{r}
+ggplot2::ggplot(star_df, aes(x=xstarLog,y=ystarLog))+
+geom_point()+
+geom_smooth(method = "lm", se=FALSE)+
+labs(x = "Logarithm of Carat ", y = "Logarithm of Price", title = "Scatterplot of Carat vs Price in Diamonds")
+```
+
+## Residual Plot of Logarithm of Both Axes
+
+```{r}
+SLRAttemptLog<-lm(ystarLog~xstarLog, data=star_df)
+par(mfrow = c(2, 2))
+plot(SLRAttemptLog)
+```
+
+## Summary of Simple Linear Regression
+```{r}
+summary(SLRAttemptLog)
+```
+
+
+
+  When we transformed the response and predictor variables by taking the logarithm, we find a very similar linear relationship. The new $R^2$ value is .955, a slight improvement. The slight curvature in the previous residual plot has flattened out. Assumptions 1-4 are still met. 
+
+  Since both predictor and response variables are log transformed, there are two ways of interpreting them. For an a% increase in the predictor, the predicted response is multiplied by (1 +$\frac{a}{100}$)*$B_1$
+
+  If we distribute the $B_1$ in the above equation, we see a new interpretation.  For every 1% increase in the carat, the expected response variable would increase by $B_1$%. 
+
+  So, in describing the relationship between carat size and price of the diamond, our model predicts that for every 1% increase in the carat, the expected price would increase by 1.94% 
+
